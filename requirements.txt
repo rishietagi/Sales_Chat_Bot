@@ -1,0 +1,15 @@
+pandas
+numpy
+streamlit
+scikit-learn
+python-dateutil
+requests
+python-dotenv
+fastapi
+uvicorn
+groq
+openpyxl
+pydantic
+python-multipart
+jinja2
+plotly
