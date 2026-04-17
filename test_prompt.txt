@@ -1,0 +1,65 @@
+queries:
+  - id: 1
+    type: simple
+    question: "Show dealers who haven’t placed any orders in the last 30 days (mark them as dormant)."
+
+  - id: 2
+    type: simple
+    question: "How many dealers currently have active orders (open saudas)?"
+
+  - id: 3
+    type: simple
+    question: "What is the total pending dispatch quantity for all active orders?"
+
+  - id: 4
+    type: simple
+    question: "Which orders are nearing expiry or need dispatch soon based on validity timelines?"
+
+  - id: 5
+    type: simple
+    question: "What percentage of the order value is still pending collection for active orders?"
+
+  - id: 6
+    type: cot
+    question: "Identify all dealers with no orders in the last 30 days."
+    steps:
+      - "Filter last order date per dealer."
+      - "Compare with current date."
+      - "Classify dealers with inactivity >30 days as dormant."
+      - "Return list with last order date and city."
+
+  - id: 7
+    type: cot
+    question: "Determine the number of dealers with active orders."
+    steps:
+      - "Filter orders with status = active/open."
+      - "Group by dealer."
+      - "Count unique dealers."
+      - "Segment by city."
+
+  - id: 8
+    type: cot
+    question: "Calculate total pending dispatch quantity."
+    steps:
+      - "For each active order, compute (ordered qty – dispatched qty)."
+      - "Aggregate across all orders."
+      - "Break down by dealer and city."
+
+  - id: 9
+    type: cot
+    question: "Identify dispatch urgency based on order validity."
+    steps:
+      - "Extract order validity end date."
+      - "Compare with current date."
+      - "Classify orders into: urgent (<3 days), upcoming (3–7 days), safe (>7 days)."
+      - "List dealer, order ID, and required dispatch date."
+
+  - id: 10
+    type: cot
+    question: "Calculate pending payment percentage for active orders."
+    steps:
+      - "Sum total order value."
+      - "Sum collected amount."
+      - "Compute pending = total – collected."
+      - "Calculate % pending = (pending / total) * 100."
+      - "Break down by dealer and city."

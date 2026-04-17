@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+import re
 from backend.services.data_engine import DataEngine
 from backend.services.rule_engine import RuleEngine
 from backend.services.llm_service import LLMService
@@ -9,6 +10,10 @@ import json
 import os
 from pydantic import BaseModel
 from backend.config.settings import settings
+import mimetypes
+
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("application/javascript", ".js")
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -51,11 +56,14 @@ def get_metrics(role: str = 'National Sales Manager', zone: str = '', bdo: str =
     elif role == 'BDO' and bdo:
         df_with_actions = df_with_actions[df_with_actions['BDO'] == bdo]
 
+    total_booked = float(df_with_actions['total_revenue'].sum() if 'total_revenue' in df_with_actions.columns else 0)
+    total_unresolved = float(df_with_actions['outstanding_amount'].sum() if 'outstanding_amount' in df_with_actions.columns else 0)
+    
     stats = {
-        "total_dealers": len(df_with_actions),
-        "total_revenue": float(df_with_actions['total_revenue'].sum() if 'total_revenue' in df_with_actions.columns else 0),
-        "total_outstanding": float(df_with_actions['outstanding_amount'].sum() if 'outstanding_amount' in df_with_actions.columns else 0),
-        "dormant_count": int(df_with_actions['is_dormant'].sum() if 'is_dormant' in df_with_actions.columns else 0),
+        "total_orders": int((df_with_actions['order_count'] > 0).sum()),
+        "active_orders": int((df_with_actions['open_order_count'] > 0).sum()),
+        "total_booked_revenue": total_booked,
+        "total_received_revenue": total_booked - total_unresolved,
     }
     return stats
 
@@ -139,6 +147,42 @@ async def process_query(request: QueryRequest):
         "explanation": explanation,
         "data": top_samples_list
     }
+
+class BatchRequest(BaseModel):
+    api_key: str
+
+@app.post("/api/run-batch-test")
+async def run_batch_test(request: BatchRequest):
+    if not request.api_key:
+        raise HTTPException(status_code=400, detail="API Key required")
+        
+    try:
+        with open("test_prompt.txt", "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Could not read test_prompt.txt")
+        
+    questions = re.findall(r'question:\s*"(.*?)"', content)
+    if not questions:
+        raise HTTPException(status_code=400, detail="No valid questions found in test_prompt.txt")
+        
+    out_file = "batch_results.txt"
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write("Batch Test Results\n==================\n\n")
+        
+    for q in questions:
+        q_req = QueryRequest(query=q, api_key=request.api_key)
+        try:
+            res = await process_query(q_req)
+            explanation = res["explanation"]
+        except Exception as e:
+            explanation = f"Error processing: {str(e)}"
+            
+        with open(out_file, "a", encoding="utf-8") as f:
+            f.write(f"Q: {q}\nA: {explanation}\n")
+            f.write("-" * 50 + "\n\n")
+            
+    return FileResponse(path=out_file, filename="batch_results.txt", media_type="text/plain")
 
 if __name__ == "__main__":
     import uvicorn

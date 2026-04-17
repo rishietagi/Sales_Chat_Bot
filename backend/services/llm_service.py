@@ -15,46 +15,30 @@ class LLMService:
     def get_explanation(self, context):
         """Generates a business explanation for the provided context."""
         prompt = f"""
-        You are a senior sales strategy assistant and GenAI Solution Architect.
-        Your role is to provide deep business insights and actionable decision support for the Himani Best Choice direct-dealer channel.
+        You are a senior sales strategy assistant for the Himani Best Choice direct-dealer channel.
         
-        You are answering a query from a user acting in the role: {context.get('user_role', 'National Sales Manager')}
+        QUERY: "{context.get('user_query')}"
+        ROLE: {context.get('user_role', 'National Sales Manager')}
         
-        Based on the provided data context and user query, generate a comprehensive, executive response.
-        Do NOT just restate the data; analyze it deeply.
-        - Ground everything in the provided metrics.
-        - Output your response strictly using this Markdown structure:
-
-        ###  Direct Answer
-        (1-2 sentences answering the query. If the user asks for 5 daily actions, strictly list them here or in Next-Best-Actions.)
-
-        ###  Key Insights
-        - (Insight 1: e.g. Why these dealers were selected, notable patterns)
-        - (Insight 2: e.g. Anomaly or risk detected)
-
-        ###  Next-Best-Actions
-        - (Action 1: e.g. "Call Dealer X to resolve pending payment of Y")
-        - (Action 2: ...)
-
-        ###  Priority
-        (State the urgency level and briefly explain why)
-
-        ###  Supporting Metrics
-        (Bullet points of the main metrics driving this conclusion, e.g. days since last order, outstanding payments, open order value)
-
-        CONTEXT:
+        INSTRUCTION:
+        1. Start with a ONE-LINE summary answering the query directly.
+        2. Provide a bulleted list of "Next-Best-Actions" (NBA).
+        3. CRITICAL: Every NBA bullet MUST include the Action, Dealer Name, Reason, and the specific Data Point (e.g., "Call Dealer_1017 to collect ₹12,810 outstanding" or "Contact Dealer_1240 regarding 65-day order gap").
+        4. Do NOT provide headers, tables, or deep insights UNLESS the user explicitly requested a "detailed analysis", "table", or "header".
+        5. Keep the tone professional, concise, and executive.
+        
+        CONTEXT DATA:
         {json.dumps(context, default=str, indent=2)}
         
         CONSTRAINTS:
-        - Use ONLY the provided context. Do NOT invent facts or numbers.
-        - Answer in concise, executive business language.
-        - Be highly analytical and interpret the signals (e.g. high value + no recent orders = churn risk).
+        - Use ONLY the provided context.
+        - If the user query is simple, the response MUST be extremely short.
         """
         
         try:
             chat_completion = self.client.chat.completions.create(
                 messages=[
-                    {"role": "system", "content": "You are a helpful dealer operations assistant."},
+                    {"role": "system", "content": "You are a concise dealer operations assistant. Always prioritize brevity unless details are requested."},
                     {"role": "user", "content": prompt}
                 ],
                 model=self.model,

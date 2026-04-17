@@ -68,6 +68,16 @@ function handleZoneChange() {
     fetchMetrics();
 }
 
+function formatCurrency(amount) {
+    if (amount >= 10000000) {
+        return `₹${(amount / 10000000).toFixed(2)} Cr`;
+    } else if (amount >= 100000) {
+        return `₹${(amount / 100000).toFixed(2)} L`;
+    } else {
+        return `₹${Math.floor(amount).toLocaleString('en-IN')}`;
+    }
+}
+
 async function fetchMetrics() {
     try {
         const role = roleSelect.value;
@@ -79,26 +89,22 @@ async function fetchMetrics() {
         const response = await fetch(url);
         const data = await response.json();
         
-        let revenueCr = (data.total_revenue / 10000000).toFixed(2);
-        let riskL = (data.total_outstanding / 100000).toFixed(2);
-        let dormantPct = ((data.dormant_count / data.total_dealers) * 100).toFixed(1);
-
         headerMetrics.innerHTML = `
             <div class="metric-card">
-                <span class="metric-label">Total Dealers</span>
-                <span class="metric-value">${data.total_dealers}</span>
+                <span class="metric-label">Total Orders</span>
+                <span class="metric-value">${data.total_orders || 0}</span>
             </div>
             <div class="metric-card">
-                <span class="metric-label">Gross Revenue</span>
-                <span class="metric-value">₹${revenueCr} Cr</span>
+                <span class="metric-label">Active Orders</span>
+                <span class="metric-value">${data.active_orders || 0}</span>
             </div>
             <div class="metric-card">
-                <span class="metric-label">Risk Exposure</span>
-                <span class="metric-value">₹${riskL} L</span>
+                <span class="metric-label">Total Booked Revenue</span>
+                <span class="metric-value">${formatCurrency(data.total_booked_revenue)}</span>
             </div>
             <div class="metric-card">
-                <span class="metric-label">Critical Dormancy</span>
-                <span class="metric-value">${data.dormant_count} <span style="font-size: 0.9rem; color: #94a3b8;">(${dormantPct}%)</span></span>
+                <span class="metric-label">Total Received Revenue</span>
+                <span class="metric-value">${formatCurrency(data.total_received_revenue)}</span>
             </div>
         `;
     } catch (e) {
@@ -121,6 +127,13 @@ function appendUserMessage(text) {
 }
 
 function appendAIMessage(markdownText, tableData) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-wrapper ai-wrapper';
+    
+    const avatar = document.createElement('img');
+    avatar.src = '/static/icon.jpeg';
+    avatar.className = 'chat-avatar';
+    
     const msgDiv = document.createElement('div');
     msgDiv.className = 'message ai';
     
@@ -129,8 +142,8 @@ function appendAIMessage(markdownText, tableData) {
     
     // Build Data Table if exists
     if (tableData && tableData.length > 0) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'data-table-wrapper';
+        const tableWrapper = document.createElement('div');
+        tableWrapper.className = 'data-table-wrapper';
         
         const table = document.createElement('table');
         
@@ -159,24 +172,38 @@ function appendAIMessage(markdownText, tableData) {
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);
-        wrapper.appendChild(table);
-        msgDiv.appendChild(wrapper);
+        tableWrapper.appendChild(table);
+        msgDiv.appendChild(tableWrapper);
     }
     
-    chatHistory.appendChild(msgDiv);
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(msgDiv);
+    
+    chatHistory.appendChild(wrapper);
     chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
 function showTypingIndicator() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-wrapper ai-wrapper';
+    wrapper.id = 'typingIndicator';
+    
+    const avatar = document.createElement('img');
+    avatar.src = '/static/icon.jpeg';
+    avatar.className = 'chat-avatar';
+    
     const loader = document.createElement('div');
     loader.className = 'typing-indicator';
-    loader.id = 'typingIndicator';
     loader.innerHTML = `
         <div class="typing-dot"></div>
         <div class="typing-dot"></div>
         <div class="typing-dot"></div>
     `;
-    chatHistory.appendChild(loader);
+    
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(loader);
+    
+    chatHistory.appendChild(wrapper);
     chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
@@ -234,4 +261,51 @@ async function handleQuerySubmit(e) {
     }
 }
 
+userInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
+    }
+});
+
 chatForm.addEventListener('submit', handleQuerySubmit);
+
+async function runBatchTest() {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        alert("Please enter a Groq API Key first!");
+        return;
+    }
+    
+    const btn = document.getElementById('batchTestBtn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<div class="typing-dot" style="background:var(--accent); margin-right:4px;"></div> Running...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/run-batch-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey })
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            alert("Error: " + (data.detail || "Failed to run batch tests"));
+        } else {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'batch_results.txt';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+    } catch (e) {
+        alert("Connection Error.");
+    } finally {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+    }
+}
