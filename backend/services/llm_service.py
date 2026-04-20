@@ -52,7 +52,9 @@ class LLMService:
         # In a real app, this would use the LLM to route to a specific analytics function.
         # For the POC, we can use a simple mapping or a small LLM call.
         prompt = f"""
-        Interpret the user query and output a JSON with 'intent' and 'filters' (if any).
+        Interpret the user query and output a JSON with 'intent', 'filters' (if any), and 'show_table' (boolean).
+        'show_table' should be true ONLY if the user explicitly asks for a table, list, or to see the data/records.
+        
         Available Intents: dealer_ranking, dormant_detection, high_value_detection, open_order_followup, payment_followup, geo_analysis, sku_analysis, bdo_daily_actions.
         
         QUERY: "{query}"
@@ -67,4 +69,4 @@ class LLMService:
             )
             return chat_completion.choices[0].message.content
         except:
-            return '{{"intent": "general_query", "filters": {{}}}}'
+            return '{"intent": "general_query", "filters": {}, "show_table": false}'

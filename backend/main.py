@@ -89,7 +89,7 @@ async def process_query(request: QueryRequest):
     try:
         interpretation = json.loads(interpretation_raw)
     except:
-        interpretation = {"intent": "general", "filters": {}}
+        interpretation = {"intent": "general", "filters": {}, "show_table": False}
         
     intent = interpretation.get("intent")
     
@@ -143,9 +143,11 @@ async def process_query(request: QueryRequest):
     
     explanation = llm.get_explanation(context)
     
+    show_table = interpretation.get("show_table", False)
+    
     return {
         "explanation": explanation,
-        "data": top_samples_list
+        "data": top_samples_list if show_table else []
     }
 
 class BatchRequest(BaseModel):

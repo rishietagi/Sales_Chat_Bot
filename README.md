@@ -1,4 +1,4 @@
-# Emami Dealer Operations AI Assistant
+# Dealer Operations AI Assistant
 
 A high-performance dealer analytics and next-best-action system designed for sales teams. The application interprets operational signals from multi-sheet Excel workbooks and provides actionable call lists and natural language insights.
 
