@@ -2,8 +2,9 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-*.xlsx
-*.csv
+# Data files (Allowed for deployment)
+# *.xlsx
+# *.csv
 batch_results.txt
 frontendss.png
 node_modules/
