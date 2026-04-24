@@ -1,6 +1,5 @@
 pandas
 numpy
-streamlit
 scikit-learn
 python-dateutil
 requests
@@ -13,3 +12,4 @@ pydantic
 python-multipart
 jinja2
 plotly
+google-generativeai
