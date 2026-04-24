@@ -6,9 +6,10 @@ class RuleEngine:
         """Applies business rules to derive action labels and prioritization."""
         if df is None: return None
         
-        # 1. Dormant Detection
-        df['is_dormant'] = df['days_since_last_order'] > 30
-        df['is_reactivation_candidate'] = (df['days_since_last_order'] > 15) & (df['days_since_last_order'] <= 30)
+        # 1. Dormant Detection (Exclude dealers with active/open orders)
+        has_active_orders = df.get('open_order_count', 0) > 0
+        df['is_dormant'] = (df['days_since_last_order'] > 30) & ~has_active_orders
+        df['is_reactivation_candidate'] = (df['days_since_last_order'] > 15) & (df['days_since_last_order'] <= 30) & ~has_active_orders
 
         # 2. High Value Dealer (Top 20% by revenue)
         if 'total_revenue' in df.columns:
@@ -27,7 +28,7 @@ class RuleEngine:
                 actions.append("Follow up for collection")
             
             if row.get('pending_dispatch_qty', 0) > 0 and row.get('dispatch_ratio', 1) < 0.8:
-                actions.append("Follow up for dispatch")
+                actions.append("Contact Warehouse for dispatch")
                 
             if row.get('has_active_sauda') and (row.get('days_since_last_order', 0) > 20):
                 actions.append("Renew / extend sauda")

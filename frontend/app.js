@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    fetchMetrics();
+    fetchBDOs();
 });
 
 const chatHistory = document.getElementById('chatHistory');
@@ -8,67 +8,70 @@ const userInput = document.getElementById('userInput');
 const sendBtn = document.getElementById('sendBtn');
 const suggestionsContainer = document.getElementById('suggestionsContainer');
 const headerMetrics = document.getElementById('headerMetrics');
-
-const roleSelect = document.getElementById('roleSelect');
-const zoneSelect = document.getElementById('zoneSelect');
 const bdoSelect = document.getElementById('bdoSelect');
 const apiKeyInput = document.getElementById('apiKeyInput');
+const modelSelect = document.getElementById('modelSelect');
+const refreshModelsBtn = document.getElementById('refreshModelsBtn');
 
-// Populate BDOs helper
-function populateBDOs(zone) {
-    bdoSelect.innerHTML = '<option value="">Select BDO...</option>';
-    if(!zone) return;
-    const prefix = zone.charAt(0); // E, W, N, S
-    for(let i=1; i<=20; i++) {
-        let num = i < 10 ? '0'+i : i;
-        let bdoName = `${prefix}_BDO_${num}`;
-        bdoSelect.innerHTML += `<option value="${bdoName}">${bdoName}</option>`;
+async function fetchBDOs() {
+    try {
+        const response = await fetch('/api/bdos');
+        const data = await response.json();
+        bdoSelect.innerHTML = '<option value="">Select BDO...</option>';
+        if (data.bdos) {
+            data.bdos.forEach(bdo => {
+                bdoSelect.innerHTML += `<option value="${bdo}">${bdo}</option>`;
+            });
+        }
+    } catch (e) {
+        console.error("Failed to load BDOs", e);
     }
 }
 
-function handleRoleChange() {
-    const role = roleSelect.value;
-    const chipContainer = document.querySelector('.suggestion-chips');
-    
-    // Reset Views
-    zoneSelect.style.display = 'none';
-    bdoSelect.style.display = 'none';
-    zoneSelect.value = "";
-    bdoSelect.value = "";
-    
-    if (role === 'National Sales Manager') {
-        chipContainer.innerHTML = `
-            <button onclick="submitSuggested('Which zone is performing best?')">Which zone is performing best?</button>
-            <button onclick="submitSuggested('What is the national collection percentage?')">National collection %?</button>
-            <button onclick="submitSuggested('Show me top active coverage zones.')">Active dealer coverage</button>
-        `;
-    } else if (role === 'Zonal Sales Manager') {
-        zoneSelect.style.display = 'inline-block';
-        chipContainer.innerHTML = `
-            <button onclick="submitSuggested('Which BDO is underperforming?')">Which BDO is underperforming?</button>
-            <button onclick="submitSuggested('Show me high risk collections in my zone')">Collection risks</button>
-            <button onclick="submitSuggested('Which BDO has most pending dispatches?')">Pending dispatches</button>
-        `;
-    } else if (role === 'BDO') {
-        zoneSelect.style.display = 'inline-block';
-        bdoSelect.style.display = 'inline-block';
-        chipContainer.innerHTML = `
-            <button onclick="submitSuggested('Give me my 5 daily actions')">Give me my 5 daily actions</button>
-            <button onclick="submitSuggested('Which of my saudas are expiring soon?')">Expiring saudas</button>
-            <button onclick="submitSuggested('Which dealers need collection follow-up today?')">Pending collection</button>
-        `;
+async function fetchGeminiModels() {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        alert("Please enter your API Key first to fetch models.");
+        return;
     }
-    fetchMetrics();
-}
+    
+    refreshModelsBtn.textContent = "Fetching...";
+    refreshModelsBtn.disabled = true;
 
-function handleZoneChange() {
-    if(roleSelect.value === 'BDO') {
-        populateBDOs(zoneSelect.value);
+    try {
+        const response = await fetch(`/api/models/gemini?api_key=${encodeURIComponent(apiKey)}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            alert("Error fetching models: " + data.error);
+            refreshModelsBtn.textContent = "Fetch Available Models";
+            refreshModelsBtn.disabled = false;
+            return;
+        }
+
+        modelSelect.innerHTML = '';
+        if (data.models && data.models.length > 0) {
+            data.models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.name.replace('models/', '');
+                opt.textContent = m.display;
+                if (opt.value === 'gemini-1.5-flash') opt.selected = true;
+                modelSelect.appendChild(opt);
+            });
+        } else {
+            modelSelect.innerHTML = '<option value="gemini-1.5-flash">No models found</option>';
+        }
+    } catch (e) {
+        console.error("Failed to load models", e);
+        alert("Failed to reach server for models.");
+    } finally {
+        refreshModelsBtn.textContent = "Fetch Available Models";
+        refreshModelsBtn.disabled = false;
     }
-    fetchMetrics();
 }
 
 function formatCurrency(amount) {
+    if (!amount) return "₹0";
     if (amount >= 10000000) {
         return `₹${(amount / 10000000).toFixed(2)} Cr`;
     } else if (amount >= 100000) {
@@ -79,31 +82,40 @@ function formatCurrency(amount) {
 }
 
 async function fetchMetrics() {
+    const bdo = bdoSelect.value;
+    if (!bdo) {
+        headerMetrics.innerHTML = '';
+        return;
+    }
+    
     try {
-        const role = roleSelect.value;
-        const zone = zoneSelect.value;
-        const bdo = bdoSelect.value;
-        
-        let url = `/api/metrics?role=${encodeURIComponent(role)}&zone=${encodeURIComponent(zone)}&bdo=${encodeURIComponent(bdo)}`;
-        
-        const response = await fetch(url);
+        const response = await fetch(`/api/metrics?bdo=${encodeURIComponent(bdo)}`);
         const data = await response.json();
         
+        if (data.error) {
+            console.error(data.error);
+            return;
+        }
+
         headerMetrics.innerHTML = `
             <div class="metric-card">
-                <span class="metric-label">Total Orders</span>
-                <span class="metric-value">${data.total_orders || 0}</span>
+                <span class="metric-label">Total Dealers</span>
+                <span class="metric-value">${data.total_dealers || 0}</span>
             </div>
             <div class="metric-card">
-                <span class="metric-label">Active Orders</span>
-                <span class="metric-value">${data.active_orders || 0}</span>
+                <span class="metric-label">Active Dealers</span>
+                <span class="metric-value">${data.active_dealers || 0}</span>
             </div>
             <div class="metric-card">
-                <span class="metric-label">Total Booked Revenue</span>
+                <span class="metric-label">Contracts (Active / Total)</span>
+                <span class="metric-value">${data.active_contracts || 0} / ${data.total_contracts || 0}</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-label">Booked Revenue</span>
                 <span class="metric-value">${formatCurrency(data.total_booked_revenue)}</span>
             </div>
             <div class="metric-card">
-                <span class="metric-label">Total Received Revenue</span>
+                <span class="metric-label">Received Revenue</span>
                 <span class="metric-value">${formatCurrency(data.total_received_revenue)}</span>
             </div>
         `;
@@ -150,30 +162,38 @@ function appendAIMessage(markdownText, tableData) {
         // Headers
         const thead = document.createElement('thead');
         const hRow = document.createElement('tr');
-        const keys = Object.keys(tableData[0]).filter(k => !['actions', 'priority_score'].includes(k)); // Customize visible columns
         
-        hRow.innerHTML = `<th>Priority</th>` + keys.map(k => `<th>${k}</th>`).join('');
-        thead.appendChild(hRow);
-        table.appendChild(thead);
+        // Filter keys to show relevant info
+        const allKeys = Object.keys(tableData[0]);
+        const keys = allKeys.filter(k => 
+            ['dealer_name', 'material_desc', 'pending_qty', 'contract_valid_to', 'basic_rate', 'oil_type', 'delivery_date', 'priority', 'type'].includes(k)
+        );
         
-        // Body
-        const tbody = document.createElement('tbody');
-        tableData.forEach(row => {
-            const tr = document.createElement('tr');
-            let cells = `<td>${row['priority_score'].toFixed(0)}</td>`;
-            keys.forEach(k => {
-                let val = row[k];
-                if (typeof val === 'number' && (k.includes('revenue') || k.includes('amount') || k.includes('value'))) {
-                    val = "₹ " + val.toLocaleString('en-IN');
-                }
-                cells += `<td>${val}</td>`;
+        if (keys.length > 0) {
+            hRow.innerHTML = keys.map(k => `<th>${k.replace(/_/g, ' ').toUpperCase()}</th>`).join('');
+            thead.appendChild(hRow);
+            table.appendChild(thead);
+            
+            // Body
+            const tbody = document.createElement('tbody');
+            tableData.forEach(row => {
+                const tr = document.createElement('tr');
+                let cells = '';
+                keys.forEach(k => {
+                    let val = row[k];
+                    if (k === 'basic_rate') val = "₹" + val.toLocaleString('en-IN');
+                    if (k === 'contract_valid_to' || k === 'delivery_date') {
+                        if (val && val !== 'Unknown') val = new Date(val).toLocaleDateString();
+                    }
+                    cells += `<td>${val}</td>`;
+                });
+                tr.innerHTML = cells;
+                tbody.appendChild(tr);
             });
-            tr.innerHTML = cells;
-            tbody.appendChild(tr);
-        });
-        table.appendChild(tbody);
-        tableWrapper.appendChild(table);
-        msgDiv.appendChild(tableWrapper);
+            table.appendChild(tbody);
+            tableWrapper.appendChild(table);
+            msgDiv.appendChild(tableWrapper);
+        }
     }
     
     wrapper.appendChild(avatar);
@@ -217,7 +237,13 @@ async function handleQuerySubmit(e) {
     
     const apiKey = apiKeyInput.value.trim();
     if (!apiKey) {
-        alert("Please enter a Groq API Key first!");
+        alert("Please enter an API Key first!");
+        return;
+    }
+    
+    const bdo = bdoSelect.value;
+    if (!bdo) {
+        alert("Please select a BDO first!");
         return;
     }
     
@@ -233,9 +259,8 @@ async function handleQuerySubmit(e) {
         const payload = {
             query: query,
             api_key: apiKey,
-            role: roleSelect.value,
-            zone: zoneSelect.value,
-            bdo: bdoSelect.value
+            bdo: bdo,
+            model: modelSelect.value
         };
         
         const response = await fetch('/api/chat', {
@@ -269,43 +294,4 @@ userInput.addEventListener('keydown', function(e) {
 });
 
 chatForm.addEventListener('submit', handleQuerySubmit);
-
-async function runBatchTest() {
-    const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) {
-        alert("Please enter a Groq API Key first!");
-        return;
-    }
-    
-    const btn = document.getElementById('batchTestBtn');
-    const originalHTML = btn.innerHTML;
-    btn.innerHTML = '<div class="typing-dot" style="background:var(--accent); margin-right:4px;"></div> Running...';
-    btn.disabled = true;
-    
-    try {
-        const response = await fetch('/api/run-batch-test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_key: apiKey })
-        });
-        
-        if (!response.ok) {
-            const data = await response.json();
-            alert("Error: " + (data.detail || "Failed to run batch tests"));
-        } else {
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'batch_results.txt';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-        }
-    } catch (e) {
-        alert("Connection Error.");
-    } finally {
-        btn.innerHTML = originalHTML;
-        btn.disabled = false;
-    }
-}
+refreshModelsBtn.addEventListener('click', fetchGeminiModels);

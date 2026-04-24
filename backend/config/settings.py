@@ -10,7 +10,7 @@ class Settings:
 
     LLM_MODEL = "llama-3.1-8b-instant"
     
-    DATA_PATH = "Emami_Direct_Dealer_Sauda_Data_Enriched_With_Zones.xlsx"
+    DATA_PATH = os.path.join("data", "emami_flat_joined_dataset.xlsx")
     
     # Business Logic Thresholds
     DORMANT_DAYS = 30

@@ -33,7 +33,14 @@ A high-performance dealer analytics and next-best-action system designed for sal
    $env:PYTHONPATH="."; python scripts/validate_pipeline.py
    ```
 
-4. **Launch the Dashboard**:
+4. **Launch the Application**:
+   To run the modern FastAPI backend with the HTML/JS frontend:
+   ```bash
+   $env:PYTHONPATH="."; python backend/main.py
+   ```
+   The app will be available at `http://localhost:8000`.
+
+   *Alternatively, to run the legacy Streamlit dashboard:*
    ```bash
    streamlit run app_v2.py
    ```

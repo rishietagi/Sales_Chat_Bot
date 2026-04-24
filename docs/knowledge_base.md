@@ -1,70 +1,39 @@
 # Dealer Operations Assistant Knowledge Base
 
 ## 1. Data Source Overview
-**Workbook Name:** `Emami_Direct_Dealer_Sauda_Data - Dummy Data.xlsx`
+**Dataset:** `emami_flat_joined_dataset.xlsx` (Centralized Flat Dataset)
 
-### Sheet 1: Active Dealer Master
-- **Dealer Code**: Unique dealer identifier.
-- **Dealer Name**: Name of the dealer/retailer.
-- **State**: Geographic state.
-- **City**: Geographic city.
-- **Credit Days**: Allowed credit period.
-- **Active Status**: Current status (Active/Inactive).
+### Key Columns
+- **Dealer Info**: `dealer_name`, `customer_code`, `city_town`, `region_descr`, `bdo`.
+- **Contracts (Sauda)**: `contract_no`, `contract_valid_to`, `active_contract_flag`, `contract_qty`, `pending_qty`, `basic_rate`, `oil_type`, `material_desc`.
+- **Open Deliveries (DO)**: `sales_document`, `delivery_date`, `delivery_today_flag`, `material_description_od`, `overall_status_description`.
+- **Estimated Values**: `contract_value_est`, `dispatch_value_est`, `pending_value_est`.
 
-### Sheet 2: 1Y Sauda Sales Data
-- **Dealer Code**: Foreign key to Dealer Master.
-- **SKU**: Product identifier.
-- **Sauda Order Date**: Date of order.
-- **Order Quantity (Cases)**: Quantity ordered.
-- **Agreed Rate (INR)**: Price per unit.
-- **Order Value (INR)**: Total order value.
+## 2. Analytical Logic
+The system uses a deterministic approach to calculate metrics before passing them to the AI.
 
-### Sheet 3: Open Orders
-- **Dealer Code**: Foreign key to Dealer Master.
-- **SKU**: Product identifier.
-- **Order Quantity (Cases)**: Quantity ordered.
-- **Dispatched Quantity**: Quantity already sent.
-- **Order Status**: Status (Expected: 'Open').
+### Business Rules
+- **Active Dealer**: A dealer is considered **Active** if they have at least one non-Unknown `contract_no` OR one non-Unknown `sales_document`.
+- **Dormant Dealer**: A dealer is **Dormant** if they exist in the master file but have zero active contracts and zero open delivery orders.
+- **Contract Expiry**: "Expiring Soon" is defined as `days_to_contract_end` ≤ 7 days.
+- **Aging**: Calculated via the `aging_by_days` column for active contracts with pending quantity.
 
-### Sheet 4: Pending Payments
-- **Dealer Code**: Foreign key to Dealer Master.
-- **Invoice Date**: Date of billing.
-- **Amount Collected (INR)**: Paid amount.
-- **Outstanding Amount (INR)**: Remaining balance.
-- **Payment Status**: Status (Expected: 'Pending').
+### Next-Best-Action (NBA) Priorities
+1. **Critical (P1)**: Contracts expiring in ≤ 3 days with pending quantity.
+2. **High (P2)**: Materials arriving today (inform dealer).
+3. **High (P3)**: Contracts expiring in 4-7 days with pending quantity.
+4. **Medium (P4)**: Aging active contracts with high pending quantity.
+5. **Medium (P5)**: Dormant dealers (nudge for new business).
 
-## 2. Join Logic
-- **Primary Key**: `Dealer Code`.
-- **Base Table**: `1Y Sauda Sales Data` aggregated at the dealer level.
-- **Enrichment**:
-    - Left join `Active Dealer Master` for attributes.
-    - Left join aggregated `Open Orders` (sum of value/count).
-    - Left join aggregated `Pending Payments` (sum of outstanding/count).
+## 3. Architecture & Methodology
+For detailed architecture, workflow, and tech stack information, refer to:
+- [Project Documentation](file:///c:/Users/rishi/Desktop/AI%20chatbot%20for%20sales/docs/project_doc.md)
+- [Tech Stack Overview](file:///c:/Users/rishi/Desktop/AI%20chatbot%20for%20sales/TECH_STACK.md)
 
-## 3. Core Derived Metrics
-| Metric | Definition |
-| :--- | :--- |
-| `last_order_date` | Max of `Sauda Order Date` |
-| `days_since_last_order` | Current Date - `last_order_date` |
-| `order_frequency` | Total order count / Active span (or per month) |
-| `total_order_value` | Sum of `Order Value (INR)` from Sales |
-| `open_order_value` | Sum of `Order Value (INR)` from Open Orders |
-| `dispatch_ratio` | `Dispatched Quantity` / `Order Quantity` |
-| `outstanding_amount` | Sum of `Outstanding Amount (INR)` |
-| `collection_ratio` | `Amount Collected` / (`Amount Collected` + `Outstanding Amount`) |
-
-## 4. Next-Best-Action Rules
-- **Reactivation Candidate**: `days_since_last_order` > 15
-- **Dormant (High Priority)**: `days_since_last_order` > 30
-- **Key Account**: Top 20% by `total_order_value` AND high frequency.
-- **Open Order Follow-up**: `open_order_value` > 0.
-- **Fulfillment Gap**: `dispatch_ratio` < 0.8.
-- **Collections Follow-up**: `outstanding_amount` > threshold.
-- **Slowing Down**: Recent 30d revenue < Previous 30d revenue by > 20%.
-
-## 5. Supported Queries
-- "Which dealers should I call this week?"
-- "Show me high-value dealers in [City/State]."
-- "List all open orders with low fulfillment."
-- "Which SKUs are performing best in [State]?"
-- "Who are my top risky debtors?"
+## 4. Supported Intent Families
+- **contract**: Sauda status, expiry, aging, pending quantity.
+- **dispatch**: Open deliveries, items arriving today, scheduled dates.
+- **new_business**: Nudging dormant or inactive dealers.
+- **collection**: Booked vs. Dispatched revenue analysis (pending payments).
+- **pricing**: Guidance on basic rates by oil type (Mean/Median/Min/Max), new contract negotiation ranges, and outlier pricing detection.
+- **daily_actions**: Ranked top 5 prioritized tasks for the BDO.

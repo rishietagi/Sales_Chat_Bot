@@ -17,29 +17,25 @@
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <img src="/static/logo.png" alt="Emami Logo" class="logo-img">
+                <img src="/static/emamiLogoTransparent.png" alt="Emami Logo" class="logo-img">
             </div>
             
             <div class="sidebar-section">
-                <label for="apiKeyInput" class="section-label">Groq API Key</label>
+                <label for="apiKeyInput" class="section-label">API Key</label>
                 <input type="password" id="apiKeyInput" placeholder="Enter API Key...">
             </div>
 
+            <div class="sidebar-section">
+                <label for="modelSelect" class="section-label">LLM Model</label>
+                <select id="modelSelect">
+                    <option value="gemini-1.5-flash">Loading models...</option>
+                </select>
+                <button id="refreshModelsBtn" class="secondary-btn" style="margin-top: 8px; width: 100%; font-size: 0.8rem;">Fetch Available Models</button>
+            </div>
+
             <div class="sidebar-section hierarchy-selectors">
-                <label for="roleSelect" class="section-label">Select Role</label>
-                <select id="roleSelect" onchange="handleRoleChange()">
-                    <option value="National Sales Manager">National Sales Manager</option>
-                    <option value="Zonal Sales Manager">Zonal Sales Manager</option>
-                    <option value="BDO">Business Development Officer (BDO)</option>
-                </select>
-                <select id="zoneSelect" style="display: none;" onchange="handleZoneChange()">
-                    <option value="">Select Zone...</option>
-                    <option value="East">East Zone</option>
-                    <option value="West">West Zone</option>
-                    <option value="North">North Zone</option>
-                    <option value="South">South Zone</option>
-                </select>
-                <select id="bdoSelect" style="display: none;" onchange="fetchMetrics()">
+                <label for="bdoSelect" class="section-label">Select BDO</label>
+                <select id="bdoSelect" onchange="fetchMetrics()">
                     <option value="">Select BDO...</option>
                     <!-- Populated by JS -->
                 </select>
@@ -47,12 +43,7 @@
 
             <div style="flex-grow: 1;"></div>
             
-            <div class="sidebar-section">
-                <button id="batchTestBtn" onclick="runBatchTest()" class="batch-test-btn">
-                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                    Run Batch Tests
-                </button>
-            </div>
+
         </aside>
 
         <!-- Main Content -->
@@ -76,9 +67,14 @@
                     <div class="suggestions" id="suggestionsContainer">
                         <p class="suggestions-title">Try asking:</p>
                         <div class="suggestion-chips">
-                            <button onclick="submitSuggested('Which high-value dealers are currently dormant?')">Top high-value dormant dealers?</button>
-                            <button onclick="submitSuggested('Who are the dealers in Maharashtra with highest outstanding?')">Highest outstanding in Maharashtra?</button>
-                            <button onclick="submitSuggested('Which orders have low dispatch ratios?')">SKUs with low fulfillment?</button>
+                            <button onclick="submitSuggested('Give me my top 5 BDO actions for today')">Top 5 actions</button>
+                            <button onclick="submitSuggested('Which contracts are expiring soon?')">Expiring contracts</button>
+                            <button onclick="submitSuggested('Which material is arriving today for which customer?')">Deliveries today</button>
+                            <button onclick="submitSuggested('Which dealer has high pending quantity?')">Pending qty</button>
+                            <button onclick="submitSuggested('Who should I follow up on for pending payments?')">Pending payments</button>
+                            <button onclick="submitSuggested('Which dealers should I call to create a new sauda?')">New sauda</button>
+                            <button onclick="submitSuggested('What basic rate should I use for sunflower oil?')">Pricing</button>
+                            <button onclick="submitSuggested('Which contracts are aging and should be prioritized?')">Aging contracts</button>
                         </div>
                     </div>
                     <!-- Chat messages will be appended here -->

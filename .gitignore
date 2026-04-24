@@ -9,3 +9,5 @@ frontendss.png
 node_modules/
 dist/
 build/
+scratch/
+.gemini/

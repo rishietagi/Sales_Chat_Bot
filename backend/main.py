@@ -2,20 +2,26 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
-import re
-from backend.services.data_engine import DataEngine
-from backend.services.rule_engine import RuleEngine
-from backend.services.llm_service import LLMService
-import json
+import pandas as pd
 import os
+import logging
 from pydantic import BaseModel
 from backend.config.settings import settings
-import mimetypes
 
-mimetypes.add_type("text/css", ".css")
-mimetypes.add_type("application/javascript", ".js")
+# Import modular components from backend.core
+from backend.core.data_loader import DataLoader
+from backend.core.feature_engineering import FeatureEngineer
+from backend.core.intent_router import IntentRouter
+from backend.core.analytics_engine import AnalyticsEngine
+from backend.core.prompt_builder import PromptBuilder
+from backend.core.llm_interface import LLMInterface
+from backend.core.schema_registry import SCHEMA_DICT
 
-app = FastAPI(title=settings.PROJECT_NAME)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Himani Best Choice BDO Assistant")
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,18 +30,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-data_path = settings.DATA_PATH
-engine = DataEngine(data_path)
+# Global instances initialized on startup
+# We'll wrap these in a way that handles the case where data might not be ready
+try:
+    loader = DataLoader(settings.DATA_PATH)
+    df = loader.load_and_clean()
+    intent_router = IntentRouter()
+    analytics_engine = AnalyticsEngine(df)
+    prompt_builder = PromptBuilder(SCHEMA_DICT)
+    llm = LLMInterface()
+    fe = FeatureEngineer(df)
+    logger.info("Backend services initialized successfully.")
+except Exception as e:
+    logger.error(f"Failed to initialize backend services: {e}")
+    df = pd.DataFrame()
 
-@app.on_event("startup")
-def startup_event():
-    try:
-        engine.load_data()
-        engine.standardize_and_merge()
-    except Exception as e:
-        print(f"Error loading initial data: {e}")
-
-# Mount static files (CSS, JS)
+# Mount static files
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 @app.get("/", response_class=HTMLResponse)
@@ -43,148 +53,89 @@ async def read_index():
     with open(os.path.join("frontend", "index.html"), "r", encoding="utf-8") as f:
         return f.read()
 
-@app.get("/api/metrics")
-def get_metrics(role: str = 'National Sales Manager', zone: str = '', bdo: str = ''):
-    df = engine.processed_df
-    if df is None: return {"error": "Data not loaded"}
-    
-    df_with_actions = RuleEngine.apply_rules(df)
-    
-    # Pre-filter by hierarchy
-    if role == 'Zonal Sales Manager' and zone:
-        df_with_actions = df_with_actions[df_with_actions['Zone'] == zone]
-    elif role == 'BDO' and bdo:
-        df_with_actions = df_with_actions[df_with_actions['BDO'] == bdo]
+@app.get("/api/bdos")
+def get_bdos():
+    if df.empty:
+        return {"bdos": []}
+    bdos = sorted([b for b in df['bdo'].unique().tolist() if b != "Unknown"])
+    return {"bdos": bdos}
 
-    total_booked = float(df_with_actions['total_revenue'].sum() if 'total_revenue' in df_with_actions.columns else 0)
-    total_unresolved = float(df_with_actions['outstanding_amount'].sum() if 'outstanding_amount' in df_with_actions.columns else 0)
-    
-    stats = {
-        "total_orders": int((df_with_actions['order_count'] > 0).sum()),
-        "active_orders": int((df_with_actions['open_order_count'] > 0).sum()),
-        "total_booked_revenue": total_booked,
-        "total_received_revenue": total_booked - total_unresolved,
-    }
-    return stats
+@app.get("/api/models/gemini")
+def get_gemini_models(api_key: str):
+    if not api_key:
+        return {"models": []}
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                models.append({
+                    "name": m.name,
+                    "display": m.display_name
+                })
+        return {"models": models}
+    except Exception as e:
+        logger.error(f"Error fetching Gemini models: {e}")
+        return {"error": str(e), "models": []}
+
+@app.get("/api/metrics")
+def get_metrics(bdo: str = ''):
+    if df.empty:
+        return {"error": "Data not loaded"}
+    if not bdo:
+        return {"error": "BDO not selected"}
+    metrics = fe.get_bdo_metrics(bdo)
+    return metrics
 
 class QueryRequest(BaseModel):
     query: str
     api_key: str
-    role: str = 'National Sales Manager'
-    zone: str = ''
-    bdo: str = ''
+    bdo: str
+    model: str = "gemini-1.5-flash"
 
 @app.post("/api/chat")
 async def process_query(request: QueryRequest):
-    query = request.query
-    if not query:
-        raise HTTPException(status_code=400, detail="Query is required")
-        
-    try:
-        llm = LLMService(api_key=request.api_key)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid API Key or LLM Error")
-        
-    interpretation_raw = llm.interpret_query(query)
-    try:
-        interpretation = json.loads(interpretation_raw)
-    except:
-        interpretation = {"intent": "general", "filters": {}, "show_table": False}
-        
-    intent = interpretation.get("intent")
+    if not request.query or not request.bdo:
+        raise HTTPException(status_code=400, detail="Query and BDO are required")
     
-    df = engine.processed_df
-    df_with_actions = RuleEngine.apply_rules(df)
-    
-    # Strict Hierarchical Filter Enforcement
-    if request.role == 'Zonal Sales Manager' and request.zone:
-        df_with_actions = df_with_actions[df_with_actions['Zone'] == request.zone]
-    elif request.role == 'BDO' and request.bdo:
-        df_with_actions = df_with_actions[df_with_actions['BDO'] == request.bdo]
-    
-    filtered_df = df_with_actions
-    
-    # Handle the specific new 5 daily actions
-    if intent == "bdo_daily_actions":
-        # Force sort by highest priority
-        filtered_df = df_with_actions.sort_values('priority_score', ascending=False)
-        top_samples = filtered_df.head(5) # Exactly 5 actions
-    elif intent == "dormant_detection":
-        filtered_df = df_with_actions[df_with_actions['is_dormant']]
-        top_samples = filtered_df.sort_values('priority_score', ascending=False).head(15)
-    elif intent == "payment_followup":
-        filtered_df = df_with_actions[df_with_actions['outstanding_amount'] > 0]
-        top_samples = filtered_df.sort_values('priority_score', ascending=False).head(15)
-    elif intent == "high_value_detection":
-        filtered_df = df_with_actions[df_with_actions['is_high_value']]
-        top_samples = filtered_df.sort_values('priority_score', ascending=False).head(15)
-    elif intent == "geo_analysis":
-        top_samples = df_with_actions.sort_values('total_revenue', ascending=False).head(15)
-    else:
-        top_samples = df_with_actions.sort_values('priority_score', ascending=False).head(15)
-        
-    cols_to_extract = ['Zone', 'Zonal Manager', 'BDO', 'Dealer Name', 'State', 'City', 'total_revenue', 'outstanding_amount', 'days_since_last_order', 'open_order_value', 'priority_score', 'actions']
-    available_cols = [c for c in cols_to_extract if c in top_samples.columns]
-    
-    top_samples_list = top_samples[available_cols].to_dict(orient="records")
-    
-    context = {
-        "user_query": query,
-        "user_role": request.role,
-        "active_hierarchy": {"zone": request.zone, "bdo": request.bdo},
-        "intent": intent,
-        "metrics": {
-            "total_matched": len(filtered_df), 
-            "total_revenue_matched": float(filtered_df['total_revenue'].sum() if 'total_revenue' in filtered_df.columns else 0),
-            "total_outstanding_matched": float(filtered_df['outstanding_amount'].sum() if 'outstanding_amount' in filtered_df.columns else 0)
-        },
-        "samples": top_samples_list
-    }
-    
-    explanation = llm.get_explanation(context)
-    
-    show_table = interpretation.get("show_table", False)
-    
-    return {
-        "explanation": explanation,
-        "data": top_samples_list if show_table else []
-    }
+    # Set API key for this request if provided
+    if request.api_key:
+        os.environ["GROQ_API_KEY"] = request.api_key
+        # Note: LLMInterface now handles key per-request internally
 
-class BatchRequest(BaseModel):
-    api_key: str
-
-@app.post("/api/run-batch-test")
-async def run_batch_test(request: BatchRequest):
-    if not request.api_key:
-        raise HTTPException(status_code=400, detail="API Key required")
-        
     try:
-        with open("test_prompt.txt", "r", encoding="utf-8") as f:
-            content = f.read()
+        # Route intent
+        routing = intent_router.route_intent(request.query)
+        intent_family = routing["family"]
+        metadata = routing["metadata"]
+
+        # Execute deterministic analytics
+        analytics_result = analytics_engine.execute_query(intent_family, request.bdo, **metadata)
+
+        # Build prompt
+        sys_p, usr_p = prompt_builder.build_prompt(request.query, request.bdo, analytics_result)
+
+        # Call LLM
+        explanation = llm.generate_explanation(sys_p, usr_p, model=request.model, api_key=request.api_key)
+
+        # Prepare response data - only if specifically requested via keywords
+        show_table = any(kw in request.query.lower() for kw in ["table", "list", "details", "show", "all", "top 5", "top five", "actions"])
+        data = []
+        if show_table:
+            if "data" in analytics_result:
+                data = analytics_result["data"]
+            elif "actions" in analytics_result:
+                data = analytics_result["actions"]
+
+        return {
+            "explanation": explanation,
+            "data": data,
+            "intent": intent_family
+        }
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Could not read test_prompt.txt")
-        
-    questions = re.findall(r'question:\s*"(.*?)"', content)
-    if not questions:
-        raise HTTPException(status_code=400, detail="No valid questions found in test_prompt.txt")
-        
-    out_file = "batch_results.txt"
-    with open(out_file, "w", encoding="utf-8") as f:
-        f.write("Batch Test Results\n==================\n\n")
-        
-    for q in questions:
-        q_req = QueryRequest(query=q, api_key=request.api_key)
-        try:
-            res = await process_query(q_req)
-            explanation = res["explanation"]
-        except Exception as e:
-            explanation = f"Error processing: {str(e)}"
-            
-        with open(out_file, "a", encoding="utf-8") as f:
-            f.write(f"Q: {q}\nA: {explanation}\n")
-            f.write("-" * 50 + "\n\n")
-            
-    return FileResponse(path=out_file, filename="batch_results.txt", media_type="text/plain")
+        logger.error(f"Error processing query: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

@@ -22,6 +22,7 @@ def run_validation():
     print("\n--- Summary Metrics ---")
     print(f"Total Revenue: {df_with_actions['total_revenue'].sum():,.2f}")
     print(f"Total Outstanding: {df_with_actions['outstanding_amount'].sum():,.2f}")
+    print(f"Total Pending Dispatch: {df_with_actions['pending_dispatch_qty'].sum():,.2f}")
     print(f"Dormant Dealers: {df_with_actions['is_dormant'].sum()}")
     print(f"High Value Dealers: {df_with_actions['is_high_value'].sum()}")
     
