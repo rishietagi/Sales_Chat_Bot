@@ -1,6 +1,5 @@
 pandas
 numpy
-scikit-learn
 python-dateutil
 requests
 python-dotenv
@@ -9,7 +8,4 @@ uvicorn
 groq
 openpyxl
 pydantic
-python-multipart
-jinja2
-plotly
 google-generativeai

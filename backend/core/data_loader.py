@@ -11,13 +11,19 @@ class DataLoader:
         self.source = file_path_or_buffer
 
     def load_and_clean(self) -> pd.DataFrame:
-        """Loads Excel, standardises columns, parses dates, cleans values."""
+        """Loads Excel with only essential columns to save memory."""
+        essential_cols = [
+            'bdo', 'dealer_name', 'customer_code', 'city_town', 'region_descr',
+            'contract_no', 'contract_valid_to', 'active_contract_flag', 
+            'contract_qty', 'despatch_qty_sauda', 'pending_qty', 'basic_rate', 
+            'oil_type', 'material_desc', 'sales_document', 'delivery_date', 
+            'delivery_today_flag', 'material_description_od', 'overall_status_description',
+            'contract_value_est', 'dispatch_value_est', 'pending_value_est',
+            'days_to_contract_end', 'aging_by_days'
+        ]
         try:
-            if isinstance(self.source, str) and self.source.endswith(".xlsx"):
-                df = pd.read_excel(self.source)
-            else:
-                # Defaulting to excel for this project as per requirements
-                df = pd.read_excel(self.source)
+            # Use usecols to only load what we need
+            df = pd.read_excel(self.source, usecols=lambda c: c in essential_cols)
         except Exception as e:
             logger.error(f"Error loading file: {e}")
             raise ValueError(f"Error loading file: {e}")
