@@ -26,7 +26,8 @@ class DecisionEngine:
         scored_actions = []
 
         # ── P1: Contracts expiring in ≤3 days with pending qty (CRITICAL) ──
-        sauda_df = bdo_df[bdo_df['contract_no'] != "Unknown"].drop_duplicates('contract_no')
+        # Sort by active_contract_flag descending so active (Sauda) row is kept by drop_duplicates
+        sauda_df = bdo_df[bdo_df['contract_no'] != "Unknown"].sort_values('active_contract_flag', ascending=False).drop_duplicates('contract_no')
         critical = sauda_df[
             (sauda_df['active_contract_flag'] == True) &
             (sauda_df['pending_qty'] > 0) &

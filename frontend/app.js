@@ -1,6 +1,23 @@
 document.addEventListener('DOMContentLoaded', () => {
     fetchBDOs();
+    checkConfig();
 });
+
+async function checkConfig() {
+    try {
+        const response = await fetch('/api/config');
+        const data = await response.json();
+        if (data.has_api_key) {
+            apiKeyInput.placeholder = "API Key configured (using .env)";
+            // Trigger model fetch with a special flag or just handle it in fetchGeminiModels
+            await fetchGeminiModels(true);
+        } else {
+            modelSelect.innerHTML = '<option value="gemini-1.5-flash">Enter API Key to load models</option>';
+        }
+    } catch (e) {
+        console.error("Failed to fetch config", e);
+    }
+}
 
 const chatHistory = document.getElementById('chatHistory');
 const chatForm = document.getElementById('chatForm');
@@ -13,27 +30,44 @@ const apiKeyInput = document.getElementById('apiKeyInput');
 const modelSelect = document.getElementById('modelSelect');
 const refreshModelsBtn = document.getElementById('refreshModelsBtn');
 
-async function fetchBDOs() {
+async function fetchBDOs(retryCount = 0) {
     try {
         const response = await fetch('/api/bdos');
         const data = await response.json();
+        
+        if ((!data.bdos || data.bdos.length === 0) && retryCount < 5) {
+            console.log(`BDOs not ready yet, retrying... (${retryCount + 1})`);
+            setTimeout(() => fetchBDOs(retryCount + 1), 2000);
+            return;
+        }
+
         bdoSelect.innerHTML = '<option value="">Select BDO...</option>';
-        if (data.bdos) {
+        if (data.bdos && data.bdos.length > 0) {
             data.bdos.forEach(bdo => {
                 bdoSelect.innerHTML += `<option value="${bdo}">${bdo}</option>`;
             });
+            console.log(`Loaded ${data.bdos.length} BDOs successfully.`);
+        } else {
+            bdoSelect.innerHTML = '<option value="">No BDOs Available</option>';
         }
     } catch (e) {
         console.error("Failed to load BDOs", e);
+        if (retryCount < 3) {
+            setTimeout(() => fetchBDOs(retryCount + 1), 3000);
+        }
     }
 }
 
-async function fetchGeminiModels() {
-    const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) {
+async function fetchGeminiModels(isAuto = false) {
+    let apiKey = apiKeyInput.value.trim();
+    if (!apiKey && !isAuto) {
         alert("Please enter your API Key first to fetch models.");
         return;
     }
+    
+    // If it's auto and no key in input, we pass empty string which the backend handles if it has a key in .env
+    // But wait, the backend API for /api/models/gemini expects api_key param.
+    // Let's modify the backend to use the .env key if the param is empty.
     
     refreshModelsBtn.textContent = "Fetching...";
     refreshModelsBtn.disabled = true;
@@ -111,12 +145,8 @@ async function fetchMetrics() {
                 <span class="metric-value">${data.active_contracts || 0} / ${data.total_contracts || 0}</span>
             </div>
             <div class="metric-card">
-                <span class="metric-label">Booked Revenue</span>
-                <span class="metric-value">${formatCurrency(data.total_booked_revenue)}</span>
-            </div>
-            <div class="metric-card">
-                <span class="metric-label">Received Revenue</span>
-                <span class="metric-value">${formatCurrency(data.total_received_revenue)}</span>
+                <span class="metric-label">Total Booked Revenue</span>
+                <span class="metric-value">₹${(data.total_booked_revenue || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}</span>
             </div>
         `;
     } catch (e) {

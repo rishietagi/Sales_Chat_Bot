@@ -21,7 +21,7 @@ from backend.core.schema_registry import SCHEMA_DICT
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Himani Best Choice BDO Assistant")
+app = FastAPI(title="Next Best Action")
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,13 +60,23 @@ def get_bdos():
     bdos = sorted([b for b in df['bdo'].unique().tolist() if b != "Unknown"])
     return {"bdos": bdos}
 
+@app.get("/api/config")
+def get_config():
+    # Check if API key is set in environment
+    has_key = bool(os.environ.get("GROQ_API_KEY"))
+    return {
+        "has_api_key": has_key,
+        "default_model": "gemini-1.5-flash"
+    }
+
 @app.get("/api/models/gemini")
-def get_gemini_models(api_key: str):
-    if not api_key:
+def get_gemini_models(api_key: str = ''):
+    effective_key = api_key or os.environ.get("GROQ_API_KEY")
+    if not effective_key:
         return {"models": []}
     try:
         import google.generativeai as genai
-        genai.configure(api_key=api_key)
+        genai.configure(api_key=effective_key)
         models = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:

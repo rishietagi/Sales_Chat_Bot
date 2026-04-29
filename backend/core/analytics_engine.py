@@ -68,7 +68,7 @@ class AnalyticsEngine:
                 contracts = contracts.sort_values('days_to_contract_end')
         
         # Select relevant columns for LLM context
-        display_cols = ['dealer_name', 'contract_no', 'material_desc', 'oil_type',
+        display_cols = ['dealer_name', 'contract_no', 'excel_row', 'material_desc', 'oil_type',
                         'contract_qty', 'despatch_qty_sauda', 'pending_qty', 
                         'basic_rate', 'days_to_contract_end', 'active_contract_flag']
         available_cols = [c for c in display_cols if c in contracts.columns]
@@ -92,7 +92,7 @@ class AnalyticsEngine:
             dispatch = bdo_df[bdo_df['sales_document'] != "Unknown"]
         
         # Select relevant columns
-        display_cols = ['dealer_name', 'material_description_od', 'delivery_date',
+        display_cols = ['dealer_name', 'excel_row', 'material_description_od', 'delivery_date',
                         'order_quantity_item', 'overall_status_description', 'sales_document']
         available_cols = [c for c in display_cols if c in dispatch.columns]
         
@@ -166,7 +166,9 @@ class AnalyticsEngine:
     def _handle_collection(self, bdo_name):
         """Collection metrics with per-dealer breakdown."""
         bdo_df = self.df[self.df['bdo'] == bdo_name]
-        sauda_df = bdo_df[bdo_df['contract_no'] != "Unknown"].drop_duplicates('contract_no')
+        # Sort by active_contract_flag descending so active (Sauda) row is kept by drop_duplicates
+        contract_rows = bdo_df[bdo_df['contract_no'] != "Unknown"].sort_values('active_contract_flag', ascending=False)
+        sauda_df = contract_rows.drop_duplicates('contract_no')
         
         total_booked = sauda_df['contract_value_est'].sum() if 'contract_value_est' in sauda_df.columns else 0
         total_dispatched = sauda_df['dispatch_value_est'].sum() if 'dispatch_value_est' in sauda_df.columns else 0
@@ -198,9 +200,7 @@ class AnalyticsEngine:
             "data": dealer_list,
             "totals": {
                 "total_booked_value": round(float(total_booked), 2),
-                "total_dispatched_value": round(float(total_dispatched), 2),
                 "total_pending_value": round(float(total_pending), 2),
-                "dispatched_pct": round(dispatched_pct, 1),
                 "pending_pct": round(pending_pct, 1),
                 "dealers_with_pending": len(dealer_list),
             },
@@ -218,9 +218,10 @@ class AnalyticsEngine:
             stats = stats[stats['oil_type'].str.contains(oil_type, case=False, na=False)]
         
         pricing_data = []
-        outlier_oils = []
+        outlier_skus = []
         for _, row in stats.iterrows():
             entry = {
+                "material_desc": row['material_desc'],
                 "oil_type": row['oil_type'],
                 "contract_count": int(row['contract_count']),
                 "mean_rate": float(row['mean_rate']),
@@ -235,12 +236,12 @@ class AnalyticsEngine:
             }
             if row['outlier_count'] > 0:
                 entry["outlier_rates"] = row['outlier_rates']
-                outlier_oils.append(row['oil_type'])
+                outlier_skus.append(row['material_desc'])
             pricing_data.append(entry)
         
         return {
             "data": pricing_data,
-            "oils_with_outliers": outlier_oils,
+            "skus_with_outliers": outlier_skus,
         }
 
     # ── Daily Actions ────────────────────────────────────────────────

@@ -24,6 +24,8 @@ class DataLoader:
         try:
             # Use usecols to only load what we need
             df = pd.read_excel(self.source, usecols=lambda c: c in essential_cols)
+            # Add excel row tracking (0-indexed + 1 for header + 1 for index)
+            df['excel_row'] = df.index + 2
         except Exception as e:
             logger.error(f"Error loading file: {e}")
             raise ValueError(f"Error loading file: {e}")
@@ -56,6 +58,6 @@ class DataLoader:
         string_cols = ['dealer_name', 'bdo', 'material_desc', 'oil_type', 'material_description_od']
         for col in string_cols:
             if col in df.columns:
-                df[col] = df[col].astype(str).fillna("Unknown").replace("nan", "Unknown")
+                df[col] = df[col].astype(str).str.strip().fillna("Unknown").replace("nan", "Unknown")
 
         return df

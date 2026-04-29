@@ -41,7 +41,7 @@ _INTENT_KEYWORDS: dict[str, list[tuple[str, int]]] = {
     ],
     "collection": [
         ("collection", 5), ("collected", 4), ("payment", 4), ("pending payment", 5),
-        ("outstanding", 4), ("yet to be collected", 5), ("received revenue", 4),
+        ("outstanding", 4), ("yet to be collected", 5),
         ("amount collected", 4), ("receivable", 3), ("follow up.*payment", 4),
     ],
     "pricing": [

@@ -18,9 +18,7 @@ class FeatureEngineer:
                 "total_dealers": 0,
                 "active_dealers": 0,
                 "total_contracts": 0,
-                "active_contracts": 0,
-                "total_booked_revenue": 0,
-                "total_received_revenue": 0
+                "active_contracts": 0
             }
 
         # Total unique dealers
@@ -32,29 +30,52 @@ class FeatureEngineer:
         ]['customer_code'].unique()
         active_dealers = len(active_codes)
 
-        # Sauda records (unique contract_no)
-        sauda_df = bdo_df[bdo_df['contract_no'] != "Unknown"].drop_duplicates('contract_no')
+        # Sauda records (unique contract_no) with active-row-first aggregation
+        sauda_rows = bdo_df[bdo_df['contract_no'] != "Unknown"]
+        if not sauda_rows.empty:
+            # Sort so active (Sauda) rows come first; 'first' then picks their values
+            sauda_rows = sauda_rows.sort_values('active_contract_flag', ascending=False)
+            sauda_df = sauda_rows.groupby('contract_no').agg({
+                'active_contract_flag': 'max',
+                'contract_value_est': 'first'  # Take from active row, not max across DO rows
+            }).reset_index()
+        else:
+            sauda_df = pd.DataFrame(columns=['contract_no', 'active_contract_flag', 'contract_value_est'])
+            
         total_contracts = sauda_df.shape[0]
         active_contracts = sauda_df[sauda_df['active_contract_flag'] == True].shape[0]
 
         # Total Booked Revenue = sum(contract_value_est)
         total_booked_revenue = sauda_df['contract_value_est'].sum() if 'contract_value_est' in sauda_df.columns else 0
 
-        # Total Received Revenue = sum(dispatch_value_est)
-        total_received_revenue = sauda_df['dispatch_value_est'].sum() if 'dispatch_value_est' in sauda_df.columns else 0
-
         return {
             "total_dealers": total_dealers,
             "active_dealers": active_dealers,
             "total_contracts": total_contracts,
             "active_contracts": active_contracts,
-            "total_booked_revenue": round(float(total_booked_revenue), 2),
-            "total_received_revenue": round(float(total_received_revenue), 2)
+            "total_booked_revenue": total_booked_revenue
         }
 
     def get_contract_data(self, bdo_name: str) -> pd.DataFrame:
-        """Returns unique contract records for a BDO."""
-        return self.df[(self.df['bdo'] == bdo_name) & (self.df['contract_no'] != "Unknown")].drop_duplicates('contract_no')
+        """Returns unique contract records for a BDO using active-row-first aggregation.
+        
+        Sorts by active_contract_flag descending so the Sauda row (flag=1) is always
+        picked by 'first' aggregation. DO rows (flag=0) have different pending_qty
+        semantics and must not leak into contract-level metrics.
+        """
+        contract_rows = self.df[(self.df['bdo'] == bdo_name) & (self.df['contract_no'] != "Unknown")]
+        if contract_rows.empty:
+            return contract_rows
+
+        # Sort: active (Sauda) rows first so 'first' picks their authoritative values
+        contract_rows = contract_rows.sort_values('active_contract_flag', ascending=False)
+            
+        agg_rules = {col: 'first' for col in contract_rows.columns if col != 'contract_no'}
+        # Only active_contract_flag uses max (if any row is active, contract is active)
+        if 'active_contract_flag' in agg_rules:
+            agg_rules['active_contract_flag'] = 'max'
+                
+        return contract_rows.groupby('contract_no').agg(agg_rules).reset_index()
 
     def get_dispatch_data(self, bdo_name: str) -> pd.DataFrame:
         """Returns open DO records for a BDO."""
@@ -68,15 +89,17 @@ class FeatureEngineer:
                            (self.df['basic_rate'] > 0)]
         
         # Deduplicate based on contract and rate to keep unique pricing points per contract
-        sauda_df = sauda_df.drop_duplicates(subset=['contract_no', 'basic_rate'])
+        if not sauda_df.empty:
+            agg_rules = {col: 'first' for col in sauda_df.columns if col not in ['contract_no', 'basic_rate']}
+            sauda_df = sauda_df.groupby(['contract_no', 'basic_rate']).agg(agg_rules).reset_index()
         
         if sauda_df.empty:
             return pd.DataFrame()
         
-        stats = sauda_df.groupby('oil_type')['basic_rate'].agg(
+        stats = sauda_df.groupby(['material_desc', 'oil_type'])['basic_rate'].agg(
             ['count', 'mean', 'median', 'min', 'max', 'std']
         ).reset_index()
-        stats.columns = ['oil_type', 'contract_count', 'mean_rate', 'median_rate', 
+        stats.columns = ['material_desc', 'oil_type', 'contract_count', 'mean_rate', 'median_rate', 
                          'min_rate', 'max_rate', 'std_rate']
         
         # Round values
@@ -89,8 +112,8 @@ class FeatureEngineer:
         guidance_low, guidance_high = [], []
         outlier_counts, outlier_details = [], []
         
-        for oil in stats['oil_type']:
-            rates = sauda_df[sauda_df['oil_type'] == oil]['basic_rate'].dropna()
+        for sku in stats['material_desc']:
+            rates = sauda_df[sauda_df['material_desc'] == sku]['basic_rate'].dropna()
             if len(rates) >= 3:
                 q1 = round(rates.quantile(0.25), 2)
                 q3 = round(rates.quantile(0.75), 2)
@@ -134,4 +157,8 @@ class FeatureEngineer:
         all_dealers = bdo_df['customer_code'].unique()
         inactive_codes = [c for c in all_dealers if c not in active_dealers]
         
-        return bdo_df[bdo_df['customer_code'].isin(inactive_codes)].drop_duplicates('customer_code')
+        inactive_df = bdo_df[bdo_df['customer_code'].isin(inactive_codes)]
+        if inactive_df.empty:
+            return inactive_df
+        agg_rules = {col: 'first' for col in inactive_df.columns if col != 'customer_code'}
+        return inactive_df.groupby('customer_code').agg(agg_rules).reset_index()
